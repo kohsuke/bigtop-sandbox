@@ -1,0 +1,5 @@
+#!/bin/bash
+# skip the host name
+shift
+vagrant ssh-config > /tmp/ssh_config.$$
+exec ssh -F /tmp/ssh_config.$$ default "$@"

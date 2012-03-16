@@ -42,6 +42,7 @@
       <groupId>com.cloudbees</groupId>
       <artifactId>junit-standalone-runner</artifactId>
       <version>1.0-SNAPSHOT</version>
+      <classifier>jar-with-dependencies</classifier>
       <scope>test</scope>
     </dependency>
     <dependency>
