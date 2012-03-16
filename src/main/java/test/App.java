@@ -12,6 +12,9 @@ import org.junit.runner.JUnitCore;
 import org.junit.runner.Result;
 import org.junit.runner.notification.Failure;
 import org.junit.runner.notification.RunListener;
+import org.kohsuke.args4j.CmdLineException;
+import org.kohsuke.args4j.CmdLineParser;
+import org.kohsuke.args4j.Option;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -23,15 +26,41 @@ import java.io.PrintStream;
  */
 public class App 
 {
-    public static void main( String[] args ) {
-        new App().run();
+    @Option(name="-report",metaVar="DIR",usage="Directory to produce test reports")
+    File reportDir;
+
+    public static void main(String[] args) {
+        System.exit(run(args));
     }
 
-    public void run() {
+    public static int run(String... args) {
+        App app = new App();
+        CmdLineParser p = new CmdLineParser(app);
+        try {
+            p.parseArgument(args);
+            return app.run();
+        } catch (CmdLineException e) {
+            System.err.println(e.getMessage());
+            System.err.println("java -jar bigtop-driver.jar ...opts... TESTDIR");
+            p.printUsage(System.err);
+            return -1;
+        }
+    }
+
+    public int run() {
         JUnitCore junit = new JUnitCore();
         junit.addListener(new TextListener(System.out));
-        junit.addListener(new JUnitResultFormatterAsRunListener(new XMLJUnitResultFormatter()));
-        junit.run(new Computer(), JenkinsTest.class);
+        if (reportDir!=null) {
+            reportDir.mkdirs();
+            junit.addListener(new JUnitResultFormatterAsRunListener(new XMLJUnitResultFormatter()) {
+                @Override
+                public void testStarted(Description description) throws Exception {
+                    formatter.setOutput(new FileOutputStream(new File(reportDir,"TEST-"+description.getDisplayName()+".xml")));
+                    super.testStarted(description);
+                }
+            });
+        }
+        return junit.run(new Computer(), JenkinsTest.class).getFailureCount();
     }
 
     /**
@@ -85,9 +114,11 @@ public class App
      * we capture each test case into a separate report file.
      */
     public static class JUnitResultFormatterAsRunListener extends RunListener {
-        private final JUnitResultFormatter formatter;
+        protected final JUnitResultFormatter formatter;
         private ByteArrayOutputStream stdout,stderr;
         private PrintStream oldStdout,oldStderr;
+        private int problem;
+        private long startTime;
 
         private JUnitResultFormatterAsRunListener(JUnitResultFormatter formatter) {
             this.formatter = formatter;
@@ -103,10 +134,11 @@ public class App
 
         @Override
         public void testStarted(Description description) throws Exception {
-            formatter.setOutput(new FileOutputStream(new File("TEST-"+description.getDisplayName()+".xml")));
             formatter.startTestSuite(new JUnitTest(description.getDisplayName()));
             formatter.startTest(new DescriptionAsTest(description));
-            
+            problem = 0;
+            startTime = System.currentTimeMillis();
+
             this.oldStdout = System.out;
             this.oldStderr = System.err;
             System.setOut(new PrintStream(stdout = new ByteArrayOutputStream()));
@@ -123,7 +155,11 @@ public class App
             formatter.setSystemOutput(stdout.toString());
             formatter.setSystemError(stderr.toString());
             formatter.endTest(new DescriptionAsTest(description));
-            formatter.endTestSuite(new JUnitTest(description.getDisplayName()));
+
+            JUnitTest suite = new JUnitTest(description.getDisplayName());
+            suite.setCounts(1,problem,0);
+            suite.setRunTime(System.currentTimeMillis()-startTime);
+            formatter.endTestSuite(suite);
         }
 
         @Override
@@ -133,6 +169,7 @@ public class App
 
         @Override
         public void testAssumptionFailure(Failure failure) {
+            problem++;
             formatter.addError(new DescriptionAsTest(failure.getDescription()), failure.getException());
         }
 

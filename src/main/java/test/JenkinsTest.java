@@ -33,6 +33,7 @@ public class JenkinsTest {
     @Test
     public void testFoo() throws Exception {
         System.err.println("Foo");
+        throw new Error();
     }
 
 //    @Parameters
